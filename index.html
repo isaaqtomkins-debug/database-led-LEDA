@@ -1,3 +1,4 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,8 +9,9 @@
     <!-- Load React and ReactDOM Libraries -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Load Babel for JSX compilation (Crucial for GitHub Pages) -->
+    <!-- Load Babel for JSX compilation (Crucial for self-contained file) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
     <!-- Load Lora Font (Newspaper/Serif Style) -->
     <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet">
     <style>
@@ -19,6 +21,19 @@
             font-family: 'Lora', serif; 
         }
     </style>
+    
+    <!-- Load Firebase Modules (Note: The canvas environment provides the auth/db setup) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Exporting modules globally for use in the <script type="text/babel"> block
+        window.firebase = { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp
+        };
+    </script>
 </head>
 <body>
     <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -27,17 +42,482 @@
     <div id="root"></div>
 
     <!-- 
-        *** IMPORTANT ***
-        This script block tells Babel to find and execute the code in your App.jsx file.
-        The browser loads the App.jsx file and Babel compiles the JSX/React code within it.
+        *** THE ENTIRE REACT/FIREBASE APPLICATION CODE ***
+        Using type="text/babel" allows Babel to compile the JSX here.
     -->
-    <script type="text/babel" data-type="module" src="./App.jsx"></script>
-    
-    <!-- Manual script block to mount the App component -->
     <script type="text/babel">
-        // The compiled 'App' component is now available globally.
+        const { useState, useEffect, useCallback, useMemo } = React;
+        const { 
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged,
+            getFirestore, collection, query, orderBy, onSnapshot, addDoc, serverTimestamp
+        } = window.firebase;
+
+        // --- Global Firebase Configuration (Mandatory Canvas Variables) ---
+        // These global variables are expected to be injected by the environment.
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- Security: ADMIN SECRET KEY ---
+        // !!! IMPORTANT: CHANGE THIS TO A SECURE, UNIQUE PASSWORD !!!
+        const ADMIN_SECRET_KEY = "admin4321"; 
+
+        // Placeholder Image URL
+        const DEFAULT_IMAGE_URL = "https://placehold.co/400x200/4f46e5/ffffff?text=Cultural+Insight";
+        const FT_PINK = '#FDF6F0';
+
+        // --- Firebase Initialization and Hook Setup ---
+
+        let db, auth, app;
+        let isInitialized = false;
+
+        const useFirebase = () => {
+            const [userId, setUserId] = useState(null);
+            const [isAuthReady, setIsAuthReady] = useState(false);
+            const [dbInstance, setDbInstance] = useState(null);
+
+            useEffect(() => {
+                if (!isInitialized && window.firebase) {
+                    try {
+                        app = initializeApp(firebaseConfig);
+                        db = getFirestore(app);
+                        auth = getAuth(app);
+                        isInitialized = true;
+                        setDbInstance(db);
+
+                        const setupAuth = async () => {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        };
+
+                        onAuthStateChanged(auth, (user) => {
+                            if (user) {
+                                setUserId(user.uid);
+                            }
+                            setIsAuthReady(true);
+                        });
+
+                        setupAuth();
+                    } catch (error) {
+                        console.error("Firebase initialization failed:", error);
+                        setIsAuthReady(true);
+                    }
+                }
+            }, []);
+
+            return { db: dbInstance, userId, isAuthReady };
+        };
+
+        // --- Custom Components ---
+
+        // 1. Article Card Preview Component
+        const ArticleCard = React.memo(({ article, navigateToArticle }) => {
+            const { id, title, author, date, preview, imageUrl, shortBodyPreview } = article;
+
+            return (
+                <div 
+                    className="article-preview-card p-6 bg-[#FDF6F0] shadow-xl rounded-3xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl cursor-pointer"
+                    onClick={() => navigateToArticle(id)}
+                >
+                    {/* 1. Headline (Title) */}
+                    <h2 className="text-2xl font-extrabold leading-tight mb-2 text-gray-900 line-clamp-2">{title}</h2>
+                    
+                    {/* 2. Byline (Author) + Date */}
+                    <p className="text-sm font-medium text-gray-700 mb-3 border-b border-gray-100 pb-2">
+                        By <span className="font-bold">{author}</span>
+                        <span className="text-xs ml-1 text-gray-400 font-normal">| {date}</span>
+                    </p>
+                    
+                    {/* 3. Standfirst (Preview) */}
+                    <p className="text-base italic text-gray-800 mb-4 line-clamp-3 leading-relaxed">{preview}</p>
+
+                    {/* 4. Main Image */}
+                    <div className="h-40 mb-4 bg-indigo-500 rounded-xl overflow-hidden shadow-md">
+                        <img src={imageUrl} alt={`Visual insight for ${title}`} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src=DEFAULT_IMAGE_URL }} />
+                    </div>
+
+                    {/* 5. Body Text Preview (3 paragraphs max with fade/ellipsis) */}
+                    <p className="text-sm text-gray-700 mb-4 leading-normal line-clamp-6">
+                        {shortBodyPreview}
+                    </p>
+
+                    <div className="mt-auto flex justify-end">
+                        <button className="text-indigo-600 font-medium text-sm hover:text-indigo-800 transition duration-150">
+                            Read Column &rarr;
+                        </button>
+                    </div>
+                </div>
+            );
+        });
+
+        // 2. Rolodex View Component
+        const RolodexView = ({ articles, navigateToArticle }) => {
+            if (articles.length === 0) {
+                return (
+                    <div className="text-center p-8 text-gray-500">
+                        <p>No articles published yet. Use the Admin Panel to add your first column!</p>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="w-full h-full flex flex-col">
+                    <p className="text-xs text-gray-400 mb-2 italic text-center">← Swipe to view older columns →</p>
+                    <div className="rolodex-container flex w-full h-full overflow-x-scroll snap-x snap-mandatory gap-0 pb-4">
+                        {articles.map(article => (
+                            <ArticleCard key={article.id} article={article} navigateToArticle={navigateToArticle} />
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // 3. Full Article View Component
+        const ArticleView = ({ article, navigateToRolodex }) => {
+            return (
+                <div className="p-4 sm:p-6 bg-[#FDF6F0] shadow-xl rounded-3xl border border-gray-100 w-full h-full">
+                    <button 
+                        onClick={navigateToRolodex} 
+                        className="flex items-center text-sm font-medium text-indigo-600 hover:text-indigo-800 mb-4 transition duration-150 p-2 rounded-lg hover:bg-indigo-50"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mr-1">
+                            <path d="m12 19-7-7 7-7"/><path d="M19 12H5"/>
+                        </svg>
+                        Back to Rolodex
+                    </button>
+
+                    <div className="full-article-content overflow-y-auto h-[calc(100%-60px)]">
+                        
+                        {/* 1. Headline (Title) */}
+                        <h1 className="text-4xl font-extrabold leading-snug mb-3 text-gray-900">{article.title}</h1>
+                        
+                        {/* 2. Byline (Author) + Date */}
+                        <p className="text-base font-medium text-gray-700 mb-4 border-b border-gray-200 pb-2">
+                            By <span className="font-bold">{article.author}</span>
+                            <span className="text-xs ml-2 text-gray-400 font-normal">| Published {article.date}</span>
+                        </p>
+                        
+                        {/* 3. Standfirst (Preview) - Distinctive italic style */}
+                        <p className="text-xl italic text-gray-800 mb-6 leading-relaxed">{article.preview}</p>
+                        
+                        {/* 4. Main Image */}
+                        <div className="h-56 sm:h-72 mb-8 bg-indigo-500 rounded-xl overflow-hidden shadow-lg">
+                            <img src={article.imageUrl} alt={`Visual insight for ${article.title}`} className="w-full h-full object-cover" onError={(e) => { e.target.onerror = null; e.target.src=DEFAULT_IMAGE_URL }} />
+                        </div>
+
+                        {/* 5. Body Text (Rendered as dangerouslySetInnerHTML since it contains HTML paragraphs) */}
+                        <div className="space-y-6 text-gray-700 leading-8 text-lg" dangerouslySetInnerHTML={{ __html: article.content }}>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // 4. Admin Form Component
+        const AdminForm = ({ db, userId, navigateToRolodex }) => {
+            const [form, setForm] = useState({
+                title: '', author: '', preview: '', imageUrl: '', content: ''
+            });
+            const [message, setMessage] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+
+            const handleChange = (e) => {
+                setForm({ ...form, [e.target.name]: e.target.value });
+            };
+
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                setIsLoading(true);
+                setMessage('');
+
+                // Ensure all required fields are filled
+                if (!form.title || !form.author || !form.content) {
+                    setMessage('Error: Title, Author, and Body Content are required.');
+                    setIsLoading(false);
+                    return;
+                }
+
+                try {
+                    const articleRef = collection(db, 'artifacts', appId, 'public', 'data', 'columns');
+                    
+                    // Generate a shortened body preview for the card (first 3 paragraphs or a set length)
+                    const plainContent = form.content.replace(/<[^>]*>/g, '');
+                    const shortBodyPreview = plainContent.substring(0, 400);
+
+                    await addDoc(articleRef, {
+                        ...form,
+                        imageUrl: form.imageUrl || DEFAULT_IMAGE_URL,
+                        shortBodyPreview: shortBodyPreview,
+                        createdAt: serverTimestamp(), // Firestore automatically handles the timestamp
+                        userId: userId, // Record the user who published it
+                    });
+
+                    setMessage('Column successfully published!');
+                    setForm({ title: '', author: '', preview: '', imageUrl: '', content: '' });
+                } catch (error) {
+                    console.error("Error adding document: ", error);
+                    setMessage('Error publishing column. See console for details.');
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const inputClass = "w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150";
+
+            return (
+                <div className="p-4 sm:p-6 bg-[#FDF6F0] shadow-xl rounded-3xl border border-gray-100 w-full h-full overflow-y-auto">
+                    <div className="flex justify-between items-center mb-6 border-b pb-4">
+                        <h2 className="text-3xl font-bold text-gray-800">Publish New Column</h2>
+                        <button onClick={navigateToRolodex} className="text-sm font-medium text-indigo-600 hover:text-indigo-800 p-2 rounded-lg hover:bg-indigo-50 transition duration-150">
+                            View Site
+                        </button>
+                    </div>
+                    
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Title (Headline)*</span>
+                            <input type="text" name="title" value={form.title} onChange={handleChange} className={inputClass} required />
+                        </label>
+
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Author (Byline)*</span>
+                            <input type="text" name="author" value={form.author} onChange={handleChange} className={inputClass} required />
+                        </label>
+                        
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Standfirst (Italic Summary/Preview)</span>
+                            <textarea name="preview" value={form.preview} onChange={handleChange} rows="3" className={inputClass} placeholder="The short, italicized text that introduces the column."></textarea>
+                        </label>
+
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Image URL (Visual Asset)</span>
+                            <input type="url" name="imageUrl" value={form.imageUrl} onChange={handleChange} className={inputClass} placeholder={DEFAULT_IMAGE_URL} />
+                        </label>
+
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Body Content (Use &lt;p&gt; tags for paragraphs)*</span>
+                            <textarea name="content" value={form.content} onChange={handleChange} rows="10" className={inputClass} required placeholder="Paste your full article content here. Use <p> and </p> to wrap each paragraph."></textarea>
+                        </label>
+                        
+                        <button type="submit" disabled={isLoading} className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition duration-150 disabled:opacity-50">
+                            {isLoading ? 'Publishing...' : 'Add Article to Rolodex'}
+                        </button>
+                    </form>
+
+                    {message && (
+                        <div className={`mt-4 p-3 rounded-xl text-center ${message.startsWith('Error') ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                            {message}
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        // 5. Admin Login View Component (NEW)
+        const AdminLoginView = ({ setViewMode }) => {
+            const [keyInput, setKeyInput] = useState('');
+            const [error, setError] = useState('');
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                setError('');
+                if (keyInput === ADMIN_SECRET_KEY) {
+                    setViewMode('admin'); // Authenticated, switch to AdminForm
+                } else {
+                    setError('Invalid Admin Key.');
+                    setKeyInput('');
+                }
+            };
+
+            const inputClass = "w-full p-3 border border-gray-300 rounded-xl focus:ring-indigo-500 focus:border-indigo-500 transition duration-150";
+
+            return (
+                <div className="p-4 sm:p-6 bg-[#FDF6F0] shadow-xl rounded-3xl border border-gray-100 w-full h-full flex flex-col items-center justify-center">
+                    <h2 className="text-2xl font-bold mb-6 text-gray-800">Administrator Login</h2>
+                    <form onSubmit={handleLogin} className="space-y-4 w-full max-w-sm">
+                        <label className="block">
+                            <span className="text-gray-700 font-semibold">Secret Admin Key:</span>
+                            <input 
+                                type="password" 
+                                value={keyInput} 
+                                onChange={(e) => setKeyInput(e.target.value)} 
+                                className={inputClass} 
+                                required 
+                                autoFocus
+                            />
+                        </label>
+                        {error && <p className="text-red-600 text-sm">{error}</p>}
+                        <button 
+                            type="submit" 
+                            className="w-full py-3 bg-red-600 text-white font-bold rounded-xl shadow-md hover:bg-red-700 transition duration-150"
+                        >
+                            Authenticate
+                        </button>
+                    </form>
+                    <button onClick={() => setViewMode('rolodex')} className="mt-4 text-sm text-indigo-600 hover:text-indigo-800">
+                        Cancel
+                    </button>
+                </div>
+            );
+        };
+
+
+        // --- Main App Component ---
+
+        const App = () => {
+            const { db, userId, isAuthReady } = useFirebase();
+            const [viewMode, setViewMode] = useState('rolodex'); // 'rolodex', 'article', 'admin', 'login'
+            const [articles, setArticles] = useState([]);
+            const [selectedArticleId, setSelectedArticleId] = useState(null);
+            const [loading, setLoading] = useState(true);
+
+            // Navigation handlers
+            const navigateToArticle = useCallback((id) => {
+                setSelectedArticleId(id);
+                setViewMode('article');
+            }, []);
+
+            const navigateToRolodex = useCallback(() => {
+                setSelectedArticleId(null);
+                setViewMode('rolodex');
+            }, []);
+            
+            // Fetch articles from Firestore (Real-time listener)
+            useEffect(() => {
+                if (!db || !isAuthReady) return;
+
+                // Collection path: /artifacts/{appId}/public/data/columns
+                const q = query(
+                    collection(db, 'artifacts', appId, 'public', 'data', 'columns'),
+                    orderBy('createdAt', 'desc') // Newest first
+                );
+
+                const unsubscribe = onSnapshot(q, (snapshot) => {
+                    const fetchedArticles = snapshot.docs.map(doc => {
+                        const data = doc.data();
+                        const timestamp = data.createdAt ? data.createdAt.toDate() : new Date();
+                        const formattedDate = timestamp.toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+                        return {
+                            id: doc.id,
+                            ...data,
+                            date: formattedDate,
+                        };
+                    });
+                    setArticles(fetchedArticles);
+                    setLoading(false);
+                }, (error) => {
+                    console.error("Error fetching articles:", error);
+                    setLoading(false);
+                });
+
+                return () => unsubscribe();
+            }, [db, isAuthReady]);
+
+            // Find the currently selected article
+            const selectedArticle = useMemo(() => {
+                return articles.find(a => a.id === selectedArticleId);
+            }, [articles, selectedArticleId]);
+            
+            // Simple Scroll to About Anchor
+            const setupAboutLink = () => {
+                const aboutSection = document.getElementById('about-section');
+                if (aboutSection) {
+                    aboutSection.scrollIntoView({ behavior: 'smooth' });
+                }
+            };
+
+            return (
+                <div style={{ fontFamily: "'Lora', serif", backgroundColor: 'white' }} className="min-h-screen pt-4 pb-12 text-gray-800">
+                    <style>{`
+                        /* Custom styles for Rolodex snapping behavior */
+                        .rolodex-container {
+                            scroll-snap-type: x mandatory;
+                            -webkit-overflow-scrolling: touch; 
+                        }
+                        .article-preview-card {
+                            flex-shrink: 0;
+                            width: 90%; 
+                            margin: 0 5%; 
+                            scroll-snap-align: center; 
+                        }
+                        /* Ensure article body text uses the correct font and spacing */
+                        .full-article-content p {
+                            margin-bottom: 1.5rem;
+                        }
+                    `}</style>
+                    
+                    {/* Header & Navigation */}
+                    <header className="max-w-xl mx-auto px-4 sm:px-6 lg:px-8 mb-6 flex justify-between items-center">
+                        <h1 className="text-3xl font-bold text-gray-800">The Daily Scroll</h1>
+                        <nav className="flex space-x-2">
+                            {/* Admin Login/View Button (Conditional display) */}
+                            {viewMode !== 'admin' && ( 
+                                <a 
+                                    href="#" 
+                                    onClick={(e) => { e.preventDefault(); setViewMode('login'); }}
+                                    className="text-sm font-medium text-red-600 hover:text-red-800 transition duration-150 p-2 rounded-lg hover:bg-red-50"
+                                >
+                                    Admin Login
+                                </a>
+                            )}
+                            {viewMode === 'admin' && ( 
+                                <button
+                                    onClick={() => setViewMode('rolodex')}
+                                    className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition duration-150 p-2 rounded-lg hover:bg-indigo-50"
+                                >
+                                    View Site
+                                </button>
+                            )}
+                            <a 
+                                href="#about-section" 
+                                onClick={(e) => { e.preventDefault(); setupAboutLink(); }}
+                                className="text-sm font-medium text-indigo-600 hover:text-indigo-800 transition duration-150 p-2 rounded-lg hover:bg-indigo-50"
+                            >
+                                About
+                            </a>
+                        </nav>
+                    </header>
+
+                    {/* Main Application View Container */}
+                    <main className="w-full max-w-xl mx-auto h-[80vh] flex flex-col items-center">
+                        <div id="app-view" className="w-full h-full">
+                            {loading && <div className="text-center py-12 text-gray-500">Loading articles...</div>}
+                            {!loading && viewMode === 'rolodex' && (
+                                <RolodexView articles={articles} navigateToArticle={navigateToArticle} />
+                            )}
+                            {viewMode === 'article' && selectedArticle && (
+                                <ArticleView article={selectedArticle} navigateToRolodex={navigateToRolodex} />
+                            )}
+                            {/* NEW: Login view is shown before AdminForm */}
+                            {viewMode === 'login' && (
+                                <AdminLoginView setViewMode={setViewMode} />
+                            )}
+                            {viewMode === 'admin' && (
+                                <AdminForm db={db} userId={userId} navigateToRolodex={navigateToRolodex} />
+                            )}
+                        </div>
+                    </main>
+
+                    {/* About Section */}
+                    <section id="about-section" className="max-w-xl mx-auto mt-16 px-6 sm:px-8 py-8 bg-[#FDF6F0] shadow-lg rounded-3xl border border-gray-100">
+                        <h2 className="text-2xl font-bold mb-4 text-gray-800">What is The Daily Scroll?</h2>
+                        <div className="space-y-4 text-gray-600">
+                            <p>This website is designed as a focused, one-month cultural micro-project. Every day, a new, single opinion column is published, encouraging users to digest one idea fully before moving on. All content is managed via a simple Admin Form and stored in a real-time database.</p>
+                            <p className="text-sm text-gray-400">Project concept by [Your Name/Team]. Created with a mobile-first philosophy. User ID: {userId || 'Authenticating...'}</p>
+                        </div>
+                    </section>
+                </div>
+            );
+        };
+
+        // Manually mount the App component
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+
     </script>
 </body>
 </html>
