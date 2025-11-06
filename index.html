@@ -363,6 +363,7 @@ const App = () => {
             setLoading(false);
         }, (error) => {
             console.error("Error fetching articles:", error);
+            // Firebase permission errors are often resolved by refreshing or ensuring rules are public.
             setLoading(false);
         });
 
@@ -384,7 +385,8 @@ const App = () => {
 
     return (
         <div style={{ fontFamily: "'Lora', serif", backgroundColor: 'white' }} className="min-h-screen pt-4 pb-12 text-gray-800">
-            <style jsx global>{`
+            {/* FIX: Removed non-standard attributes 'jsx' and 'global' from <style> tag */}
+            <style>{`
                 /* Custom styles for Rolodex snapping behavior */
                 .rolodex-container {
                     scroll-snap-type: x mandatory;
@@ -459,7 +461,6 @@ const App = () => {
                 <h2 className="text-2xl font-bold mb-4 text-gray-800">What is The Daily Scroll?</h2>
                 <div className="space-y-4 text-gray-600">
                     <p>This website is designed as a focused, one-month cultural micro-project. Every day, a new, single opinion column is published, encouraging users to digest one idea fully before moving on. All content is managed via a simple Admin Form and stored in a real-time database.</p>
-                    <p>The **preview cards** allow for quick scanning, while clicking expands the article into a **dedicated reading page** for a distraction-free experience.</p>
                     <p className="text-sm text-gray-400">Project concept by [Your Name/Team]. Created with a mobile-first philosophy. User ID: {userId || 'Authenticating...'}</p>
                 </div>
             </section>
