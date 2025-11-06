@@ -164,47 +164,42 @@
         // --- View Rendering Functions ---
 
         function renderArticleCard(article) {
-            return `
-                <div 
-                    class="article-preview-card p-6 bg-[var(--ft-pink)] shadow-xl rounded-3xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl cursor-pointer"
-                    onclick="navigateToArticle('${article.id}')"
-                >
-                    <!-- 1. Headline (Title) -->
-                    <h2 class="text-2xl font-extrabold leading-tight mb-2 text-gray-900 line-clamp-2">${article.title}</h2>
-                    
-                    <!-- 2. Byline (Author) + Date -->
-                    <p class="text-sm font-medium text-gray-700 mb-3 border-b border-gray-100 pb-2">
-                        By <span class="font-bold">${article.author}</span>
-                        <span class="text-xs ml-1 text-gray-400 font-normal">| ${article.date}</span>
-                    </p>
-                    
-                    <!-- 3. Standfirst (Preview) -->
-                    <p class="text-base italic text-gray-800 mb-4 line-clamp-3 leading-relaxed">${article.preview}</p>
+            return `
+                <div 
+                    class="article-preview-card p-6 bg-[var(--ft-pink)] shadow-xl rounded-3xl border border-gray-100 flex flex-col overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:shadow-2xl cursor-pointer"
+                    onclick="navigateToArticle('${article.id}')"
+                >
+                    <!-- 1. Headline (Title) -->
+                    <h2 class="text-2xl font-extrabold leading-tight mb-2 text-gray-900 line-clamp-2">${article.title}</h2>
+                    
+                    <!-- 2. Byline (Author) + Date -->
+                    <p class="text-sm font-medium text-gray-700 mb-3 border-b border-gray-100 pb-2">
+                        By <span class="font-bold">${article.author}</span>
+                        <span class="text-xs ml-1 text-gray-400 font-normal">| ${article.date}</span>
+                    </p>
+                    
+                    <!-- 3. Standfirst (Preview) -->
+                    <p class="text-base italic text-gray-800 mb-4 line-clamp-3 leading-relaxed">${article.preview}</p>
 
-                    <!-- ---------------------------------------------------- -->
-                    <!-- **NEW POSITION: BODY PREVIEW IS NOW ABOVE THE IMAGE** -->
-                    <!-- ---------------------------------------------------- -->
+                    <!-- 5. Body Text Preview (3 paragraphs max with fade/ellipsis) -->
+                    <p class="text-sm text-gray-700 mb-4 leading-normal line-clamp-6">
+                        ${article.shortBodyPreview}
 
-                    <!-- 4. Body Text Preview (3 paragraphs max with fade/ellipsis) -->
-                    <p class="text-sm text-gray-700 mb-4 leading-normal line-clamp-6">
-                        ${article.shortBodyPreview}
-                    </p>
+                    <!-- 4. Main Image -->
+                    <div class="aspect-[5/4] mb-4 bg-indigo-500 rounded-xl overflow-hidden shadow-md">
+                        <img src="${article.imageUrl}" alt="Visual insight for ${article.title}" class="w-full h-full object-cover" onerror="this.onerror=null; this.src='https://placehold.co/400x200/4f46e5/ffffff?text=Cultural+Insight'" />
+                    </div>
+                    </p>
 
-                    <!-- ---------------------------------------------------- -->
+                    <div class="mt-auto flex justify-end">
+                        <span class="text-indigo-600 font-medium text-sm transition duration-150">
+                            Read Column &rarr;
+                        </span>
+                    </div>
+                </div>
+            `;
+        }
 
-                    <!-- 5. Main Image (Now positioned after the body preview text) -->
-                    <div class="aspect-[5/4] mb-4 bg-indigo-500 rounded-xl overflow-hidden shadow-md">
-                        <img src="${article.imageUrl}" alt="Visual insight for ${article.title}" class="w-full h-full object-cover" onerror="this.onerror=null; this.src='https://placehold.co/400x200/4f46e5/ffffff?text=Cultural+Insight'" />
-                    </div>
-
-                    <div class="mt-auto flex justify-end">
-                        <span class="text-indigo-600 font-medium text-sm transition duration-150">
-                            Read Column &rarr;
-                        </span>
-                    </div>
-                </div>
-            `;
-        }
         function renderRolodex() {
             if (articles.length === 0) {
                 appView.innerHTML = `<div class="text-center p-8 text-gray-500">
